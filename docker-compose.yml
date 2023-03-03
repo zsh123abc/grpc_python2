@@ -1,0 +1,101 @@
+version: '2'
+services:  
+  label_db:
+    #image: 'bitnami/mysql:8.0.28'
+    image: registry.cn-hangzhou.aliyuncs.com/acs-sample/mysql:5.7
+    container_name: label_db
+    volumes:
+            #- /home/yd/label_system/mysql_data_8:/bitnami/mysql/data
+      - "/home/yd/label_system/mysql_data_5.7:/var/lib/mysql"
+      - "./myext.cnf:/etc/mysql/conf.d/myext.cnf"
+    restart: always
+    privileged: true
+    environment:
+            #- MYSQL_DATABASE=file
+      - MYSQL_ROOT_PASSWORD=yd_db_pass
+        #- MYSQL_REPLICATION_MODE=master
+    ports:
+      - 3306:3306
+    networks:
+      - label_system_default
+
+  label-system-frontend:
+    image: jelastic/nodejs:10.23.0-npm
+    container_name: label-system-frontend
+    volumes:
+      - "/home/yd/label_system:/apps"
+    ports:
+      - 9081:8081
+      - 9080:8080
+    command: /bin/bash -c "cd /apps/qiwen-file-web;npm run serve > my.log 2>&1"
+    networks:
+      - label_system_default
+    depends_on:
+      - label-system-backend
+
+  label-system-backend:
+    image: pizzasteve/jdk8-maven-npm-yarn
+    container_name: label-system-backend
+    volumes:
+      - "/data:/data"
+      - "/home/yd/label_system:/apps"
+      - "/home/yd/label_system/maven_m2:/root/.m2"
+    ports:
+      - 9180:8080
+        #environment:
+        #JAVA_OPTS: "-Xms1024m -Xmx1024m -XX:PermSize=2024M -XX:MaxPermSize=2048M -XX:+ExitOnOutOfMemoryError"
+    shm_size: "2gb"
+    command: /bin/bash -c "cd /apps/qiwen-file/release/bin;./start.sh > server.log 2>&1;tail -f /dev/null"
+    networks:
+      - label_system_default
+    depends_on:
+      - label_db
+
+  # label-system-backend-python:
+  #   image: cncowboy/label-system-backend-python:v1.0
+  #   #mldworak/python3.8-opencv:cpu
+  #   container_name: label-system-backend-python
+  #   volumes:
+  #     - "/data:/data"
+  #     - "/home/yd/label_system:/apps"
+  #   ports:
+  #     - 9280:8080
+  #   command: /bin/bash -c "cd /apps/flask/python_restful_file_system/; python run.py; tail -f /dev/null"
+  #   networks:
+  #     - label_system_default
+  #   depends_on:
+  #     - label_db
+
+  grpc_python2:
+    image: cncowboy/label-system-backend-python:v1.0
+    # image: grpc_python:latest
+    container_name: grpc_python2   
+    volumes:
+      - "/home/yd/label_system/flask:/yd"
+    # command: python3 /yd/ComputeServicer.py
+    command: /bin/bash -c "cd /yd/python_restful_file_system/; python run.py; tail -f /dev/null"
+    # ports:
+    #   - 9280:8080
+    networks:
+      - label_system_default
+    depends_on:
+      - label_db
+      
+  nginx:
+    image: bitnami/nginx:1.20.2-debian-10-r128
+    container_name: label_system_nginx
+    ports:
+      - '1080:8080'
+      - '10443:443'
+    volumes:
+      - ./nginx_conf/vhost/label_system.conf:/opt/bitnami/nginx/conf/server_blocks/label_data.conf:ro
+      - ./nginx_conf/certs:/certs
+    networks:
+      - label_system_default
+    # 依赖启动必须要，nginx应该等其他容器都启动后再启动 
+    depends_on:
+      - label-system-backend
+      - grpc_python2
+      - label-system-frontend
+networks:
+  label_system_default:
